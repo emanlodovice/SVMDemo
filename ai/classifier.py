@@ -8,6 +8,10 @@ from sklearn.naive_bayes import MultinomialNB
 from sklearn.pipeline import Pipeline
 from sklearn.cross_validation import KFold
 
+from sklearn import metrics
+from sklearn.svm import SVC
+from sklearn.cross_validation import train_test_split
+
 import numpy
 import data_parser
 import stopwords
@@ -74,13 +78,15 @@ def cross_validation(data_set, n_folds=8):
 
 
 def diagnose(classifier, data_set):
+    feats = []
+    classes = []
     for data in data_set:
-        classification = classifier.classify(data[0])
-        if classification != data[1]:
-            print data[0]
-            print "Expected Classification: " + str(data[1])
-            print "Classifier result: " + str(classification)
-            print "\n"
+        feats.append(data[0])
+        classes.append(data[1])
+    pred = classifier.classify_many(feats)
+    print(metrics.classification_report(classes, pred))
+
+
 
 
 training_set, test_set, total = parse_data()
@@ -98,13 +104,13 @@ while i < len(training_set):
     training_acc.append(training)
     cv_acc.append(cv)
     i += 1000
-    print i
+    # print i
 plot(sizes, ys=[training_acc, cv_acc], legs=['Training', 'CV'])
 # Get accuracy
 lr_classifier = cross_validation(training_set)[0]
 lr_accuracy = classify.accuracy(lr_classifier, test_set)
-print "Classifier accuracy on test: " + str(lr_accuracy)
+# print "Classifier accuracy on test: " + str(lr_accuracy)
 lr_accuracy_training = classify.accuracy(lr_classifier, training_set)
-print "Classifier accuracy on training: " + str(lr_accuracy_training)
+# print "Classifier accuracy on training: " + str(lr_accuracy_training)
 
-#diagnose(lr_classifier, test_set)
+diagnose(lr_classifier, test_set)
