@@ -63,9 +63,10 @@ def cross_validation(data_set, n_folds=8):
     best_accuracy = -1
     training_accuracy = 0
     for train, cv in kf:
+        print cv
         classifier = SklearnClassifier(
             Pipeline([('tfidf', TfidfTransformer()),
-                      ('nb', LinearSVC(C=0.1, tol=0.000001))]))
+                      ('nb', LinearSVC(C=1, tol=0.000001))]))
         training_data = data_set[0:cv[0]] + data_set[cv[-1]:]
         cv_data = data_set[cv[0]:cv[-1]+1]
         classifier.train(training_data)
@@ -85,8 +86,6 @@ def diagnose(classifier, data_set):
         classes.append(data[1])
     pred = classifier.classify_many(feats)
     print(metrics.classification_report(classes, pred))
-
-
 
 
 training_set, test_set, total = parse_data()
@@ -114,3 +113,15 @@ lr_accuracy_training = classify.accuracy(lr_classifier, training_set)
 # print "Classifier accuracy on training: " + str(lr_accuracy_training)
 
 diagnose(lr_classifier, test_set)
+
+sentence = 'a'
+while True:
+    sentence = raw_input('Test me: ')
+    if sentence == '':
+        break
+    features = feature_extractor(sentence)
+    classification = lr_classifier.classify(features)
+    if classification == 1:
+        print 'Subjective'
+    else:
+        print 'Objective'
