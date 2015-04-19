@@ -63,7 +63,6 @@ def cross_validation(data_set, n_folds=8):
     best_accuracy = -1
     training_accuracy = 0
     for train, cv in kf:
-        print cv
         classifier = SklearnClassifier(
             Pipeline([('tfidf', TfidfTransformer()),
                       ('nb', LinearSVC(C=1, tol=0.000001))]))
