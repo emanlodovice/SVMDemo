@@ -1,7 +1,9 @@
 from nltk import word_tokenize, WordNetLemmatizer
 
 from sklearn.feature_extraction.text import TfidfTransformer
-from sklearn.svm import LinearSVC
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.svm import LinearSVC, SVC
+from sklearn.pipeline import Pipeline
 from sklearn.cross_validation import KFold
 from sklearn import metrics
 from sklearn.cross_validation import train_test_split
@@ -20,15 +22,53 @@ class SubjectivityClassier(object):
     def __init__(self, data_file_pos='data_1.pos', data_file_neg='data_2.neg'):
         print 'initializing'
         # initialize helper classes
-        self._vectorizer = DictVectorizer(dtype=float, sparse=True)
         self._lematizer = WordNetLemmatizer()
         self.initialize_data_sets(data_file_pos, data_file_neg)
 
+    def __parse(self, data_file_pos='data_1.pos', data_file_neg='data_2.neg'):
+        """ Reads the files and returns data_set composed of cleaned senteces"""
+        print "Reading files..."
+        data_pos, data_neg = data_parser.build_data(positive=data_file_pos,
+                                                    negative=data_file_neg)
+        random.shuffle(data_pos)
+        random.shuffle(data_neg)
+        data_test = data_pos[int(len(data_pos) * .8):] + \
+            data_neg[int(len(data_neg) * .8):]
+        random.shuffle(data_test)
+        data_train = data_pos[:int(len(data_pos) * .8)] + \
+            data_neg[:int(len(data_neg) * .8)]
+        random.shuffle(data_train)
+        print "Size: ", len(data_train) + len(data_test)
+        training_set = [(self.__word_cleaner(d['text']), d['class'])
+                        for d in data_train]
+        test_set = [(self.__word_cleaner(d['text']), d['class'])
+                    for d in data_test]
+        return training_set, test_set
+
+    def __word_cleaner(self, sentence):
+        """ Removes the unwanted words in the sentence. """
+        features = {}
+        words = {}
+        lematizer = WordNetLemmatizer()
+
+        # get individual words from text
+        words = [lematizer.lemmatize(word.lower()) for word in \
+                 word_tokenize(sentence)]
+        final_words = []
+
+        for word in words:
+            word = word.encode('utf-8', 'ignore')
+            if len(word) > 1:
+                # check if word in not a stop word
+                if word not in stopwords.stop_words:
+                    final_words.append(word)
+        return ' '.join(final_words)
+
     def initialize_data_sets(self, data_file_pos='data_1.pos',
                              data_file_neg='data_2.neg'):
+        """ Initializes the training and test data sets. """
         training_set, test_set = self.__parse(
             data_file_pos, data_file_neg)
-        print "Transformin feature vectors"
         X_training = []
         Y_training = []
         for x in training_set:
@@ -39,13 +79,14 @@ class SubjectivityClassier(object):
         for x in test_set:
             X_test.append(x[0])
             Y_test.append(x[1])
-        self.X_training = self._vectorizer.fit_transform(X_training).toarray()
+        self.X_training = X_training
         self.Y_training = Y_training
-        self.X_test = self._vectorizer.transform(X_test).toarray()
+        self.X_test = X_test
         self.Y_test = Y_test
 
     def train_classifier(self, n_folds=10, learning_curve=True,
                          start_size=4000, inc=1000):
+        """ Trains the classifier. Function can also display learning curve."""
         print "training"
         size = len(self.X_training)
         train_accs = []
@@ -62,10 +103,36 @@ class SubjectivityClassier(object):
             train_accs.append(train_acc)
             cv_accs.append(cv_acc)
             size += inc
-        print "here"
         self.classifier = classifier
         if learning_curve:
             plot(sizes, ys=[train_accs, cv_accs], legs=['Training', 'CV'])
+
+    def cross_validation(self, X, Y, n_folds=10):
+        """ n-fold cross validation to get the best classifier. """
+        kf = KFold(len(X), n_folds=n_folds)
+        best_accuracy = -1
+        training_accuracy = 0
+        for train, cv in kf:
+            classifier = Pipeline([('vect', CountVectorizer()),
+                                   ('tfidf', TfidfTransformer()),
+                                   ('svm', LinearSVC(C=1))])
+            # forms the training and test set
+            X_train = []
+            X_train.extend(X[0:cv[0]])
+            X_train.extend(X[cv[-1]:])
+            Y_train = []
+            Y_train.extend(Y[0:cv[0]])
+            Y_train.extend(Y[cv[-1]:])
+            X_cv = X[cv[0]:cv[-1]+1]
+            Y_cv = Y[cv[0]:cv[-1]+1]
+            classifier.fit(X_train, Y_train)
+            accuracy = self.__accuracy(classifier, X_cv, Y_cv)
+            if accuracy > best_accuracy:
+                best_classifier = classifier
+                best_accuracy = accuracy
+                training_accuracy = self.__accuracy(
+                    classifier, X_train, Y_train)
+        return best_classifier, training_accuracy, best_accuracy
 
     def test(self):
         print "testing"
@@ -75,47 +142,12 @@ class SubjectivityClassier(object):
         print metrics.classification_report(self.Y_test, y_pred)
 
     def predict(self, sentence):
-        word_dict = self.__word_dict(sentence)
-        features = self._vectorizer.transform(word_dict).toarray()
-        return self.classifier.predict(features)
-
-    def cross_validation(self, X, Y, n_folds=8):
-        kf = KFold(len(X), n_folds=n_folds)
-        best_accuracy = -1
-        training_accuracy = 0
-        for train, cv in kf:
-            classifier = LinearSVC(C=1, tol=0.000001)
-            X_train = []
-            X_train.extend(X[0:cv[0]])
-            X_train.extend(X[cv[-1]:])
-            Y_train = []
-            Y_train.extend(Y[0:cv[0]])
-            Y_train.extend(Y[cv[-1]:])
-            # c = 0
-            # for index in train:
-            #     X_train.append(X[index])
-            #     Y_train.append(Y[index])
-            # X_train = X[cv[-1]:]
-            # Y_train = Y[cv[-1]:]
-            # print len(X_train[0])
-            # if cv[0] != 0:
-            #     print len(X[0:cv[0]][0])
-            #     X_train += X[0:cv[0]]
-            #     Y_train += Y[0:cv[0]]
-            X_cv = X[cv[0]:cv[-1]+1]
-            Y_cv = Y[cv[0]:cv[-1]+1]
-            print "Fitting..."
-            classifier.fit(X_train, Y_train)
-            print "Accouracy..."
-            accuracy = self.__accuracy(classifier, X_cv, Y_cv)
-            if accuracy > best_accuracy:
-                best_classifier = classifier
-                best_accuracy = accuracy
-                training_accuracy = self.__accuracy(
-                    classifier, X_train, Y_train)
-        return best_classifier, training_accuracy, best_accuracy
+        """ Classifying sentences. """
+        cleaned = self.__word_cleaner(sentence)
+        return self.classifier.predict([cleaned])[0]
 
     def __accuracy(self, classifier, X, Y):
+        """ Computes the classifier's accuracy over the dataset. """
         y_pred = classifier.predict(X)
         count = 0
         i = 0
@@ -125,46 +157,6 @@ class SubjectivityClassier(object):
                 count += 1
             i += 1
         return float(count) / size
-
-    def __parse(self, data_file_pos='data_1.pos', data_file_neg='data_2.neg'):
-        print "Reading files..."
-        data_pos, data_neg = data_parser.build_data(positive=data_file_pos,
-                                                    negative=data_file_neg)
-        data_test = data_pos[int(len(data_pos) * .8):] + \
-            data_neg[int(len(data_neg) * .8):]
-        random.shuffle(data_test)
-        data_train = data_pos[:int(len(data_pos) * .8)] + \
-            data_neg[:int(len(data_neg) * .8)]
-        random.shuffle(data_train)
-        print "Size: ", len(data_train) + len(data_test)
-        training_set = [(self.__word_dict(d['text']), d['class'])
-                        for d in data_train]
-        test_set = [(self.__word_dict(d['text']), d['class'])
-                    for d in data_test]
-        return training_set, test_set
-
-    def __word_dict(self, sentence):
-        features = {}
-        words = {}
-        lematizer = WordNetLemmatizer()
-
-        # get individual words from text
-        words = [lematizer.lemmatize(word.lower()) for word in \
-                 word_tokenize(sentence)]
-
-        for word in words:
-            word = word.encode('utf-8', 'ignore')
-            if len(word) > 1:
-                # check if word in not a stop word
-                if word not in stopwords.stop_words:
-                    if word in features:
-                        features[word] += 1
-                    else:
-                        features[word] = 1
-        return features
-
-    def train(self, n_folds=10):
-        classifier = LinearSVC()
 
 
 a = SubjectivityClassier()
